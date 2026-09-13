@@ -1,61 +1,84 @@
-from flask import Flask, request, jsonify
+```python
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
 from ultralytics import YOLO
 import os
+import uuid
 
 app = Flask(__name__)
+CORS(app)
 
-# Load trained plastic detection model
-model = YOLO("best.pt")
+# -----------------------------
+# Paths
+# -----------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_PATH = os.path.join(BASE_DIR, "best.pt")
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# -----------------------------
+# Load trained YOLO model
+# -----------------------------
+model = YOLO(MODEL_PATH)
 
 
+# -----------------------------
+# Home page
+# -----------------------------
 @app.route("/")
 def home():
-    return "Plastic Waste Detection API is running!"
+    return render_template("index.html")
 
 
+# -----------------------------
+# Health check
+# -----------------------------
 @app.route("/health")
 def health():
     return jsonify({
         "status": "healthy",
-        "message": "Plastic Waste Detection API is running"
+        "model_loaded": True
     })
 
 
+# -----------------------------
+# Plastic detection
+# -----------------------------
 @app.route("/detect", methods=["POST"])
 def detect():
 
     if "image" not in request.files:
         return jsonify({
-            "error": "No image provided"
+            "status": "error",
+            "message": "No image uploaded"
         }), 400
 
     image = request.files["image"]
 
     if image.filename == "":
         return jsonify({
-            "error": "No image selected"
+            "status": "error",
+            "message": "No image selected"
         }), 400
 
-    # Create uploads folder
-    os.makedirs("uploads", exist_ok=True)
+    # Create unique filename
+    filename = str(uuid.uuid4()) + "_" + image.filename
+    image_path = os.path.join(UPLOAD_FOLDER, filename)
 
-    image_path = os.path.join(
-        "uploads",
-        image.filename
-    )
-
-    # Save uploaded image
     image.save(image_path)
 
     try:
-
-        # Run YOLO plastic detection
+        # Run YOLO detection
         results = model.predict(
             source=image_path,
-            conf=0.25
+            conf=0.25,
+            verbose=False
         )
 
-        detections = []
+        detected_objects = []
+        confidence_values = []
 
         for result in results:
 
@@ -67,32 +90,40 @@ def detect():
                 class_id = int(box.cls[0])
                 confidence = float(box.conf[0])
 
-                # Bounding box coordinates
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                class_name = model.names[class_id]
 
-                detections.append({
-                    "class": model.names[class_id],
-                    "confidence": round(confidence, 2),
-                    "box": [
-                        round(x1),
-                        round(y1),
-                        round(x2),
-                        round(y2)
-                    ]
+                detected_objects.append({
+                    "class": class_name,
+                    "confidence": round(confidence * 100, 2)
                 })
+
+                confidence_values.append(confidence)
+
+        # Count detected plastic objects
+        plastic_count = len(detected_objects)
+
+        # Average confidence
+        if confidence_values:
+            average_confidence = (
+                sum(confidence_values) /
+                len(confidence_values)
+            ) * 100
+        else:
+            average_confidence = 0
 
         return jsonify({
             "status": "success",
-            "plastic_detected": len(detections) > 0,
-            "count": len(detections),
-            "detections": detections
+            "plastic_detected": plastic_count > 0,
+            "plastic_count": plastic_count,
+            "detected_objects": detected_objects,
+            "confidence": round(average_confidence, 2)
         })
 
     except Exception as e:
 
         return jsonify({
             "status": "error",
-            "error": str(e)
+            "message": str(e)
         }), 500
 
     finally:
@@ -102,10 +133,15 @@ def detect():
             os.remove(image_path)
 
 
+# -----------------------------
+# Run application
+# -----------------------------
 if __name__ == "__main__":
+
+    port = int(os.environ.get("PORT", 10000))
 
     app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        debug=False
+        port=port
     )
+```
