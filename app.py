@@ -1,4 +1,3 @@
-```python
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from ultralytics import YOLO
@@ -8,9 +7,6 @@ import uuid
 app = Flask(__name__)
 CORS(app)
 
-# -----------------------------
-# Paths
-# -----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_PATH = os.path.join(BASE_DIR, "best.pt")
@@ -18,23 +14,15 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# -----------------------------
-# Load trained YOLO model
-# -----------------------------
+# Load trained plastic detection model
 model = YOLO(MODEL_PATH)
 
 
-# -----------------------------
-# Home page
-# -----------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# -----------------------------
-# Health check
-# -----------------------------
 @app.route("/health")
 def health():
     return jsonify({
@@ -43,9 +31,6 @@ def health():
     })
 
 
-# -----------------------------
-# Plastic detection
-# -----------------------------
 @app.route("/detect", methods=["POST"])
 def detect():
 
@@ -63,14 +48,13 @@ def detect():
             "message": "No image selected"
         }), 400
 
-    # Create unique filename
     filename = str(uuid.uuid4()) + "_" + image.filename
     image_path = os.path.join(UPLOAD_FOLDER, filename)
 
     image.save(image_path)
 
     try:
-        # Run YOLO detection
+
         results = model.predict(
             source=image_path,
             conf=0.25,
@@ -89,7 +73,6 @@ def detect():
 
                 class_id = int(box.cls[0])
                 confidence = float(box.conf[0])
-
                 class_name = model.names[class_id]
 
                 detected_objects.append({
@@ -99,10 +82,8 @@ def detect():
 
                 confidence_values.append(confidence)
 
-        # Count detected plastic objects
         plastic_count = len(detected_objects)
 
-        # Average confidence
         if confidence_values:
             average_confidence = (
                 sum(confidence_values) /
@@ -128,14 +109,10 @@ def detect():
 
     finally:
 
-        # Delete uploaded image after processing
         if os.path.exists(image_path):
             os.remove(image_path)
 
 
-# -----------------------------
-# Run application
-# -----------------------------
 if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 10000))
@@ -144,4 +121,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port
     )
-```
